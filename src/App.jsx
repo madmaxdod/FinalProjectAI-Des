@@ -15,22 +15,54 @@ export default function App() {
   const [playing, setPlaying] = useState(false)
   const [rate, setRate] = useState(1)
 
-  // Connect websocket
+  // Connect websocket (dynamic, secure-aware URL)
   useEffect(() => {
     let ws
+    let attempts = 0
     function connect() {
+      attempts += 1
       setSocketStatus('connecting')
-      ws = new WebSocket('ws://localhost:3001')
-      wsRef.current = ws
+      // Prefer same-origin proxy path (/ws) so Vite can handle upgrade in dev.
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      const baseHost = window.location.host
+      const tryPaths = [`${proto}//${baseHost}/ws`, `${proto}//${baseHost}:3001`]
 
-      ws.onopen = () => setSocketStatus('open')
-      ws.onclose = () => {
-        setSocketStatus('closed')
-        // auto-reconnect
-        reconnectTimer.current = setTimeout(connect, 1500)
+      function tryNext() {
+        const url = tryPaths.shift()
+        if (!url) {
+          setSocketStatus('closed')
+          // retry whole sequence
+          reconnectTimer.current = setTimeout(connect, Math.min(2000 * attempts, 10000))
+          return
+        }
+        console.debug('WS trying', url)
+        ws = new WebSocket(url)
+        wsRef.current = ws
+
+        ws.onopen = () => {
+          console.debug('WS open', url)
+          setSocketStatus('open')
+        }
+        ws.onclose = (e) => {
+          console.debug('WS closed', url, e && e.code)
+          setSocketStatus('closed')
+          // if closed quickly, try next path
+          if (e && e.code === 1006) {
+            tryNext()
+          } else {
+            reconnectTimer.current = setTimeout(connect, 1500)
+          }
+        }
+        ws.onerror = (ev) => {
+          console.debug('WS error', url, ev)
+          setSocketStatus('error')
+          // try next fallback
+          tryNext()
+        }
+        ws.onmessage = () => {}
       }
-      ws.onerror = () => setSocketStatus('error')
-      ws.onmessage = () => {}
+
+      tryNext()
     }
     connect()
     return () => {
