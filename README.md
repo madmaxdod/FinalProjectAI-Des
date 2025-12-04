@@ -30,4 +30,3 @@ Notes
 If you'd like, I can:
 - Run `npm install` and start the dev server in this container now.
 - Adjust the UI layout, styles, or the exact websocket event payload format.
-# FinalProjectAI-Des
